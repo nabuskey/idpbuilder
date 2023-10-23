@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  goreleaser:
+  release:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -21,7 +21,7 @@ jobs:
       # Ensure generation tools run
       - name: build
         run: |
-          make build
+          OUT_FILE=/tmp/localidp make build
       - name: GoReleaser
         uses: goreleaser/goreleaser-action@7ec5c2b0c6cdda6e8bbb49444bc797dd33d74dd8 # v5.0.0
         id: run-goreleaser
