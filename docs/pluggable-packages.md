@@ -293,3 +293,30 @@ In this case, idpbuilder must:
 
   * Replace `argoproj.github.io` with `http-endpoint.git.svc.cluster.local`.
   * Replace `github.com` with `git-server.git.svc.cluster.local`.
+
+
+#### Package abstraction
+
+Another approach that could be used is to refactor the `localbuidls` CRD to describe packages to be managed with configurations.
+
+An example may look: 
+
+```yaml
+kind: Localbuild
+metadata:
+  name: 
+spec:
+  packages:
+    - type: pluggable
+      format: Helm/Kustomize
+      config:
+        param1: value1
+```
+
+This provides full spec for abstracting applications and allows for users to define their applications through the CRD. This also allows for changing the CD solution from ArgoCD to another CD solution since packages are now decoupled from ArgoCD. This approach has a few drawbacks:
+
+1. Dependencies and processing overheads. Idpbuilder must now import dependencies and potentially match rendering logic versions. 
+2. Complexity. With different package systems and their possible interactions with each other, idpbuilder must be able to resolve any conflicts and ordering issues.
+3. This approach alo gets close to application modeling. There has been attempts at modeling applications like OAM with Kubevela. There are no solutions that the industry is converging to. This project needs to be careful abut introducing another modeling approach.
+
+This approach maybe considered further once this project matures. 
