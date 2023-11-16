@@ -35,7 +35,7 @@ const (
 	gitCommitAuthorEmail = "invalid@cnoe.io"
 )
 
-type ClientFN func(url string, options ...gitea.ClientOption) (GiteaClient, error)
+type GiteaClientFunc func(url string, options ...gitea.ClientOption) (GiteaClient, error)
 
 func NewGiteaClient(url string, options ...gitea.ClientOption) (GiteaClient, error) {
 	return gitea.NewClient(url, options...)
@@ -43,9 +43,9 @@ func NewGiteaClient(url string, options ...gitea.ClientOption) (GiteaClient, err
 
 type RepositoryReconciler struct {
 	client.Client
-	GiteaClientFN ClientFN
-	Recorder      record.EventRecorder
-	Scheme        *runtime.Scheme
+	GiteaClientFunc GiteaClientFunc
+	Recorder        record.EventRecorder
+	Scheme          *runtime.Scheme
 }
 
 func getRepositoryName(repo v1alpha1.GitRepository) string {
@@ -108,7 +108,7 @@ func (r *RepositoryReconciler) postProcessReconcile(ctx context.Context, req ctr
 func (r *RepositoryReconciler) reconcileGitRepo(ctx context.Context, repo *v1alpha1.GitRepository) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("reconciling", "name", repo.Name, "dir", repo.Spec.Source)
-	giteaClient, err := r.GiteaClientFN(repo.Spec.GiteaURL)
+	giteaClient, err := r.GiteaClientFunc(repo.Spec.GiteaURL)
 	if err != nil {
 		return ctrl.Result{Requeue: true, RequeueAfter: requeueTime}, fmt.Errorf("failed to get gitea client: %w", err)
 	}
@@ -256,14 +256,14 @@ func getEmbedded(name string) ([][]byte, error) {
 	}
 }
 
-func writeRepoContents(repo *v1alpha1.GitRepository, tempDir string) error {
+func writeRepoContents(repo *v1alpha1.GitRepository, dstPath string) error {
 	if repo.Spec.Source.EmbeddedAppName != "" {
 		resources, err := getEmbedded(repo.Spec.Source.EmbeddedAppName)
 		if err != nil {
 			return fmt.Errorf("getting embedded resource; %w", err)
 		}
 		for i := range resources {
-			filePath := filepath.Join(tempDir, fmt.Sprintf("resource%d.yaml", i))
+			filePath := filepath.Join(dstPath, fmt.Sprintf("resource%d.yaml", i))
 			err = os.WriteFile(filePath, resources[i], 0644)
 			if err != nil {
 				return fmt.Errorf("writing embedded resource; %w", err)
@@ -272,7 +272,7 @@ func writeRepoContents(repo *v1alpha1.GitRepository, tempDir string) error {
 		return nil
 	}
 
-	err := util.CopyDirectory(repo.Spec.Source.Path, tempDir)
+	err := util.CopyDirectory(repo.Spec.Source.Path, dstPath)
 	if err != nil {
 		return fmt.Errorf("copying files: %w", err)
 	}

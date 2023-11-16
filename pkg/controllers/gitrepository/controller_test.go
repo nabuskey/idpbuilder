@@ -180,7 +180,7 @@ func TestGitRepositoryContentReconcile(t *testing.T) {
 	t.Run("files modified", func(t *testing.T) {
 		reconciler := RepositoryReconciler{
 			Client: fake.NewClientBuilder().Build(),
-			GiteaClientFN: func(url string, options ...gitea.ClientOption) (GiteaClient, error) {
+			GiteaClientFunc: func(url string, options ...gitea.ClientOption) (GiteaClient, error) {
 				return mockGitea{}, nil
 			},
 		}
@@ -251,7 +251,7 @@ func TestGitRepositoryContentReconcileEmbedded(t *testing.T) {
 	t.Run("should sync embedded", func(t *testing.T) {
 		reconciler := RepositoryReconciler{
 			Client: fake.NewClientBuilder().Build(),
-			GiteaClientFN: func(url string, options ...gitea.ClientOption) (GiteaClient, error) {
+			GiteaClientFunc: func(url string, options ...gitea.ClientOption) (GiteaClient, error) {
 				return mockGitea{}, nil
 			},
 		}
@@ -343,8 +343,8 @@ func TestGitRepositoryReconcile(t *testing.T) {
 		v := cases[k]
 		t.Run(k, func(t *testing.T) {
 			reconciler := RepositoryReconciler{
-				Client:        fake.NewClientBuilder().Build(),
-				GiteaClientFN: v.giteaClient,
+				Client:          fake.NewClientBuilder().Build(),
+				GiteaClientFunc: v.giteaClient,
 			}
 			_, err := reconciler.reconcileGitRepo(ctx, &v.input)
 			if v.expect.err == nil && err != nil {
