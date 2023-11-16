@@ -226,6 +226,43 @@ func TestGitRepositoryContentReconcile(t *testing.T) {
 	})
 }
 
+func TestGitRepositoryContentReconcileEmbedded(t *testing.T) {
+	ctx := context.Background()
+	dir, _, err := setUpLocalRepo()
+	defer os.RemoveAll(dir)
+	if err != nil {
+		t.Fatalf("failed setting up local git repo: %v", err)
+	}
+
+	m := metav1.ObjectMeta{
+		Name:      "test",
+		Namespace: "test",
+	}
+	resource := v1alpha1.GitRepository{
+		ObjectMeta: m,
+		Spec: v1alpha1.GitRepositorySpec{
+			Source: v1alpha1.GitRepositorySource{
+				EmbeddedAppName: "nginx",
+				Type:            "embedded",
+			},
+		},
+	}
+
+	t.Run("should sync embedded", func(t *testing.T) {
+		reconciler := RepositoryReconciler{
+			Client: fake.NewClientBuilder().Build(),
+			GiteaClientFN: func(url string, options ...gitea.ClientOption) (GiteaClient, error) {
+				return mockGitea{}, nil
+			},
+		}
+
+		err := reconciler.reconcileRepoContent(ctx, &resource, &gitea.Repository{CloneURL: dir})
+		if err != nil {
+			t.Fatalf("failed adding %v", err)
+		}
+	})
+}
+
 func TestGitRepositoryReconcile(t *testing.T) {
 	dir, hash, err := setUpLocalRepo()
 	defer os.RemoveAll(dir)

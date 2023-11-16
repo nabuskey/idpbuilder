@@ -249,6 +249,8 @@ func getEmbedded(name string) ([][]byte, error) {
 	switch name {
 	case "argocd":
 		return localbuild.GetRawInstallResources()
+	case "nginx":
+		return localbuild.RawNginxInstallResources()
 	default:
 		return nil, fmt.Errorf("unsupported embedded app name %s", name)
 	}
