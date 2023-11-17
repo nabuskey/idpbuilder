@@ -6,9 +6,9 @@ import (
 
 type GitRepositorySpec struct {
 	Source GitRepositorySource `json:"source,omitempty"`
-	// GiteaURL is the base URL of GitTea server
+	// GitURL is the base URL of GitTea server
 	// +kubebuilder:validation:Required
-	GiteaURL string `json:"giteaURL"`
+	GitURL string `json:"giteaURL"`
 }
 
 type GitRepositorySource struct {

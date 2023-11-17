@@ -278,9 +278,22 @@ func (r *LocalbuildReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *LocalbuildReconciler) ReconcileArgoAppsWithGitea(ctx context.Context, req ctrl.Request, resource *v1alpha1.Localbuild) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
+	logger.Info("TODO(nimak): enable installing Argo Apps")
 
-	log.Info("TODO(nimak): enable installing Argo Apps")
 	r.shouldShutdown = true
 	return ctrl.Result{}, nil
+}
+
+func GetEmbeddedRawInstallResources(name string) ([][]byte, error) {
+	switch name {
+	case "argocd":
+		return RawArgocdInstallResources()
+	case "nginx":
+		return RawNginxInstallResources()
+	case "gitea":
+		return RawGiteaInstallResources()
+	default:
+		return nil, fmt.Errorf("unsupported embedded app name %s", name)
+	}
 }

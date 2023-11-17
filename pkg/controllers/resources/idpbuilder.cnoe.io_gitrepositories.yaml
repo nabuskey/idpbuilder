@@ -33,7 +33,7 @@ spec:
           spec:
             properties:
               giteaURL:
-                description: GiteaURL is the base URL of GitTea server
+                description: GitURL is the base URL of GitTea server
                 type: string
               source:
                 properties:

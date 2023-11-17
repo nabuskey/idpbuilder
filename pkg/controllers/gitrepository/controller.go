@@ -15,7 +15,9 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -26,13 +28,12 @@ import (
 )
 
 const (
-	DefaultBranchName = "main"
-	// DefaultGiteaUsername and DefaultGiteaPassword taken from gitea helm chart. https://gitea.com/gitea/helm-chart#gitea
-	DefaultGiteaUsername = "gitea_admin"
-	DefaultGiteaPassword = "r8sA8CPHD9!bt6d"
-	requeueTime          = time.Second * 30
-	gitCommitAuthorName  = "git-reconciler"
-	gitCommitAuthorEmail = "invalid@cnoe.io"
+	DefaultBranchName     = "main"
+	giteaAdminUsernameKey = "username"
+	giteaAdminPasswordKey = "password"
+	requeueTime           = time.Second * 30
+	gitCommitAuthorName   = "git-reconciler"
+	gitCommitAuthorEmail  = "invalid@cnoe.io"
 )
 
 type GiteaClientFunc func(url string, options ...gitea.ClientOption) (GiteaClient, error)
@@ -49,19 +50,41 @@ type RepositoryReconciler struct {
 }
 
 func getRepositoryName(repo v1alpha1.GitRepository) string {
-	return fmt.Sprintf("%s-%s", repo.Name, repo.Namespace)
+	return fmt.Sprintf("%s-%s", repo.Namespace, repo.Name)
 }
 
 func getOrganizationName(repo v1alpha1.GitRepository) string {
 	return fmt.Sprintf("%s-%s", globals.ProjectName, repo.Namespace)
 }
 
-func getCredentials(name, namespace string) (string, string, error) {
-	return DefaultGiteaUsername, DefaultGiteaPassword, nil
+func (r *RepositoryReconciler) getCredentials(ctx context.Context, repo *v1alpha1.GitRepository) (string, string, error) {
+	lb, err := r.getLocalBuild(ctx, repo)
+	if err != nil {
+		return "", "", err
+	}
+
+	var secret v1.Secret
+	err = r.Client.Get(ctx, types.NamespacedName{
+		Namespace: lb.Status.GiteaSecretNamespace,
+		Name:      lb.Status.GiteaSecretName,
+	}, &secret)
+	if err != nil {
+		return "", "", err
+	}
+
+	username, ok := secret.Data[giteaAdminUsernameKey]
+	if !ok {
+		return "", "", fmt.Errorf("%s key not found in secret %s in %s ns", giteaAdminUsernameKey, lb.Status.GiteaSecretName, lb.Status.GiteaSecretNamespace)
+	}
+	password, ok := secret.Data[giteaAdminPasswordKey]
+	if !ok {
+		return "", "", fmt.Errorf("%s key not found in secret %s in %s ns", giteaAdminPasswordKey, lb.Status.GiteaSecretName, lb.Status.GiteaSecretNamespace)
+	}
+	return string(username), string(password), nil
 }
 
-func getBasicAuth(name, namespace string) (http.BasicAuth, error) {
-	u, p, err := getCredentials(name, namespace)
+func (r *RepositoryReconciler) getBasicAuth(ctx context.Context, repo *v1alpha1.GitRepository) (http.BasicAuth, error) {
+	u, p, err := r.getCredentials(ctx, repo)
 	if err != nil {
 		return http.BasicAuth{}, err
 	}
@@ -69,6 +92,26 @@ func getBasicAuth(name, namespace string) (http.BasicAuth, error) {
 		Username: u,
 		Password: p,
 	}, nil
+}
+
+func (r *RepositoryReconciler) getLocalBuild(ctx context.Context, repo *v1alpha1.GitRepository) (v1alpha1.Localbuild, error) {
+	if repo.ObjectMeta.OwnerReferences != nil {
+		for i := range repo.ObjectMeta.OwnerReferences {
+			ref := repo.ObjectMeta.OwnerReferences[i]
+			if ref.Kind == "Localbuild" {
+				var lb v1alpha1.Localbuild
+				err := r.Client.Get(ctx, types.NamespacedName{
+					Name: ref.Name,
+				}, &lb)
+				if err != nil {
+					return v1alpha1.Localbuild{}, err
+				}
+
+				return lb, nil
+			}
+		}
+	}
+	return v1alpha1.Localbuild{}, fmt.Errorf("local build not found for %s", repo.Name)
 }
 
 func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -108,12 +151,12 @@ func (r *RepositoryReconciler) postProcessReconcile(ctx context.Context, req ctr
 func (r *RepositoryReconciler) reconcileGitRepo(ctx context.Context, repo *v1alpha1.GitRepository) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("reconciling", "name", repo.Name, "dir", repo.Spec.Source)
-	giteaClient, err := r.GiteaClientFunc(repo.Spec.GiteaURL)
+	giteaClient, err := r.GiteaClientFunc(repo.Spec.GitURL)
 	if err != nil {
 		return ctrl.Result{Requeue: true, RequeueAfter: requeueTime}, fmt.Errorf("failed to get gitea client: %w", err)
 	}
 
-	user, pass, err := getCredentials(repo.Name, repo.Namespace)
+	user, pass, err := r.getCredentials(ctx, repo)
 	if err != nil {
 		return ctrl.Result{Requeue: true, RequeueAfter: requeueTime}, fmt.Errorf("failed to get gitea credentials: %w", err)
 	}
@@ -189,7 +232,7 @@ func (r *RepositoryReconciler) reconcileRepoContent(ctx context.Context, repo *v
 		return fmt.Errorf("committing git files: %w", err)
 	}
 
-	auth, err := getBasicAuth(repo.Name, repo.Namespace)
+	auth, err := r.getBasicAuth(ctx, repo)
 	if err != nil {
 		return fmt.Errorf("getting basic auth: %w", err)
 	}
@@ -245,20 +288,9 @@ func (r *RepositoryReconciler) shouldProcess(repo v1alpha1.GitRepository) bool {
 	return true
 }
 
-func getEmbedded(name string) ([][]byte, error) {
-	switch name {
-	case "argocd":
-		return localbuild.GetRawInstallResources()
-	case "nginx":
-		return localbuild.RawNginxInstallResources()
-	default:
-		return nil, fmt.Errorf("unsupported embedded app name %s", name)
-	}
-}
-
 func writeRepoContents(repo *v1alpha1.GitRepository, dstPath string) error {
 	if repo.Spec.Source.EmbeddedAppName != "" {
-		resources, err := getEmbedded(repo.Spec.Source.EmbeddedAppName)
+		resources, err := localbuild.GetEmbeddedRawInstallResources(repo.Spec.Source.EmbeddedAppName)
 		if err != nil {
 			return fmt.Errorf("getting embedded resource; %w", err)
 		}

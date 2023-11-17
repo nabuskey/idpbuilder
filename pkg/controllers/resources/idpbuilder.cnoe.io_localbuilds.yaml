@@ -74,6 +74,8 @@ spec:
                 type: boolean
               giteaSecret:
                 type: string
+              giteaSecretNamespace:
+                type: string
               nginxAvailable:
                 type: boolean
               observedGeneration:
