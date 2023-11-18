@@ -22,9 +22,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -65,8 +63,8 @@ func (r *RepositoryReconciler) getCredentials(ctx context.Context, repo *v1alpha
 
 	var secret v1.Secret
 	err = r.Client.Get(ctx, types.NamespacedName{
-		Namespace: lb.Status.GiteaSecretNamespace,
-		Name:      lb.Status.GiteaSecretName,
+		Namespace: lb.Status.Gitea.AdminUserSecretNamespace,
+		Name:      lb.Status.Gitea.AdminUserSecretName,
 	}, &secret)
 	if err != nil {
 		return "", "", err
@@ -74,11 +72,11 @@ func (r *RepositoryReconciler) getCredentials(ctx context.Context, repo *v1alpha
 
 	username, ok := secret.Data[giteaAdminUsernameKey]
 	if !ok {
-		return "", "", fmt.Errorf("%s key not found in secret %s in %s ns", giteaAdminUsernameKey, lb.Status.GiteaSecretName, lb.Status.GiteaSecretNamespace)
+		return "", "", fmt.Errorf("%s key not found in secret %s in %s ns", giteaAdminUsernameKey, lb.Status.Gitea.AdminUserSecretName, lb.Status.Gitea.AdminUserSecretNamespace)
 	}
 	password, ok := secret.Data[giteaAdminPasswordKey]
 	if !ok {
-		return "", "", fmt.Errorf("%s key not found in secret %s in %s ns", giteaAdminPasswordKey, lb.Status.GiteaSecretName, lb.Status.GiteaSecretNamespace)
+		return "", "", fmt.Errorf("%s key not found in secret %s in %s ns", giteaAdminPasswordKey, lb.Status.Gitea.AdminUserSecretName, lb.Status.Gitea.AdminUserSecretNamespace)
 	}
 	return string(username), string(password), nil
 }
@@ -271,9 +269,9 @@ func reconcileRepo(giteaClient GiteaClient, repo *v1alpha1.GitRepository) (*gite
 }
 
 func (r *RepositoryReconciler) SetupWithManager(mgr ctrl.Manager, notifyChan chan event.GenericEvent) error {
+	// TODO: should use notifyChan to trigger reconcile when FS changes
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.GitRepository{}).
-		Watches(&source.Channel{Source: notifyChan}, &handler.EnqueueRequestForObject{}).
 		Complete(r)
 }
 

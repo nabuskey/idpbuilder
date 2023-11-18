@@ -11,9 +11,13 @@ import (
 )
 
 const (
-	// hardcoded secret name and namespace from what we have in the yaml installation file.
+	// hardcoded values from what we have in the yaml installation file.
 	giteaNamespace   = "gitea"
 	giteaAdminSecret = "gitea-admin-secret"
+	// this is the URL accessible outside cluster. resolves to localhost
+	giteaIngressURL = "http://gitea.cnoe.localtest.me:3000"
+	// this is the URL accessible within cluster for ArgoCD to fetch resources
+	giteaSvcURL = "http://my-gitea-http.gitea.svc.cluster.local:3000"
 )
 
 //go:embed resources/gitea/k8s/*
@@ -41,9 +45,10 @@ func (r *LocalbuildReconciler) ReconcileGitea(ctx context.Context, req ctrl.Requ
 	if result, err := gitea.Install(ctx, req, resource, r.Client, r.Scheme); err != nil {
 		return result, err
 	}
-
-	resource.Status.GiteaSecretName = giteaAdminSecret
-	resource.Status.GiteaSecretNamespace = giteaNamespace
-	resource.Status.GiteaAvailable = true
+	resource.Status.Gitea.ExternalURL = giteaIngressURL
+	resource.Status.Gitea.InternalURL = giteaSvcURL
+	resource.Status.Gitea.AdminUserSecretName = giteaAdminSecret
+	resource.Status.Gitea.AdminUserSecretNamespace = giteaNamespace
+	resource.Status.Gitea.Available = true
 	return ctrl.Result{}, nil
 }

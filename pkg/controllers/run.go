@@ -46,7 +46,7 @@ func RunControllers(ctx context.Context, mgr manager.Manager, exitCh chan error,
 		GiteaClientFunc: gitrepository.NewGiteaClient,
 	}).SetupWithManager(mgr, nil)
 	if err != nil {
-		log.Error(err, "unable to create ")
+		log.Error(err, "unable to create repo controller")
 	}
 
 	// Start our manager in another goroutine

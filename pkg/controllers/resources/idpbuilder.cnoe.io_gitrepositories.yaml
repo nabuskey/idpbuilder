@@ -32,14 +32,17 @@ spec:
             type: object
           spec:
             properties:
-              giteaURL:
-                description: GitURL is the base URL of GitTea server
+              gitURL:
+                description: GitURL is the base URL of Git server
+                pattern: ^https?:\/\/.+$
                 type: string
               source:
                 properties:
                   embeddedAppName:
                     enum:
                     - argocd
+                    - backstage
+                    - crossplane
                     - gitea
                     - nginx
                     type: string
@@ -59,7 +62,7 @@ spec:
                 - type
                 type: object
             required:
-            - giteaURL
+            - gitURL
             type: object
           status:
             properties:

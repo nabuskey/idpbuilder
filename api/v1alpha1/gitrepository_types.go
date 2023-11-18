@@ -6,13 +6,14 @@ import (
 
 type GitRepositorySpec struct {
 	Source GitRepositorySource `json:"source,omitempty"`
-	// GitURL is the base URL of GitTea server
+	// GitURL is the base URL of Git server
 	// +kubebuilder:validation:Required
-	GitURL string `json:"giteaURL"`
+	// +kubebuilder:validation:Pattern=`^https?:\/\/.+$`
+	GitURL string `json:"gitURL"`
 }
 
 type GitRepositorySource struct {
-	// +kubebuilder:validation:Enum:=argocd;gitea;nginx
+	// +kubebuilder:validation:Enum:=argocd;backstage;crossplane;gitea;nginx
 	// +kubebuilder:validation:Optional
 	EmbeddedAppName string `json:"embeddedAppName"`
 	// Path is the absolute path to directory that contains Kustomize structure or raw manifests.
