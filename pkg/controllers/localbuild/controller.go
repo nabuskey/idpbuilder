@@ -303,7 +303,7 @@ func (r *LocalbuildReconciler) reconcileEmbeddedApps(ctx context.Context, req ct
 func (r *LocalbuildReconciler) reconcileBootstrapApps(ctx context.Context, req ctrl.Request, resource *v1alpha1.Localbuild) (ctrl.Result, error) {
 	bootStrapApps := []string{"argocd", "nginx", "gitea"}
 	for _, n := range bootStrapApps {
-		repo := v1alpha1.GitRepository{
+		repo := &v1alpha1.GitRepository{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      n,
 				Namespace: globals.GetProjectNamespace(resource.Name),
@@ -316,9 +316,8 @@ func (r *LocalbuildReconciler) reconcileBootstrapApps(ctx context.Context, req c
 			},
 		}
 
-		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, &repo, func() error {
-			err := controllerutil.SetOwnerReference(resource, &repo, r.Scheme)
-			if err != nil {
+		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, repo, func() error {
+			if err := controllerutil.SetControllerReference(resource, repo, r.Scheme); err != nil {
 				return err
 			}
 			return nil
@@ -341,8 +340,7 @@ func (r *LocalbuildReconciler) reconcileBootstrapApps(ctx context.Context, req c
 			nil,
 		)
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, app, func() error {
-			err := controllerutil.SetOwnerReference(resource, &repo, r.Scheme)
-			if err != nil {
+			if err := controllerutil.SetControllerReference(resource, app, r.Scheme); err != nil {
 				return err
 			}
 			return nil

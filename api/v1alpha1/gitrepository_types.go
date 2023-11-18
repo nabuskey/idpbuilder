@@ -10,6 +10,9 @@ type GitRepositorySpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=`^https?:\/\/.+$`
 	GitURL string `json:"gitURL"`
+	// SecretRef is the reference to secret that contain Git server credentials
+	// +kubebuilder:validation:Optional
+	SecretRef SecretReference `json:"secretRef"`
 }
 
 type GitRepositorySource struct {
@@ -24,6 +27,11 @@ type GitRepositorySource struct {
 	// +kubebuilder:validation:Enum:=local;embedded
 	// +kubebuilder:default:=local
 	Type string `json:"type"`
+}
+
+type SecretReference struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
 }
 
 type Commit struct {

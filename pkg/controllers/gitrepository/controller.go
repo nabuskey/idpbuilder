@@ -56,15 +56,10 @@ func getOrganizationName(repo v1alpha1.GitRepository) string {
 }
 
 func (r *RepositoryReconciler) getCredentials(ctx context.Context, repo *v1alpha1.GitRepository) (string, string, error) {
-	lb, err := r.getLocalBuild(ctx, repo)
-	if err != nil {
-		return "", "", err
-	}
-
 	var secret v1.Secret
-	err = r.Client.Get(ctx, types.NamespacedName{
-		Namespace: lb.Status.Gitea.AdminUserSecretNamespace,
-		Name:      lb.Status.Gitea.AdminUserSecretName,
+	err := r.Client.Get(ctx, types.NamespacedName{
+		Namespace: repo.Spec.SecretRef.Namespace,
+		Name:      repo.Spec.SecretRef.Name,
 	}, &secret)
 	if err != nil {
 		return "", "", err
@@ -72,11 +67,11 @@ func (r *RepositoryReconciler) getCredentials(ctx context.Context, repo *v1alpha
 
 	username, ok := secret.Data[giteaAdminUsernameKey]
 	if !ok {
-		return "", "", fmt.Errorf("%s key not found in secret %s in %s ns", giteaAdminUsernameKey, lb.Status.Gitea.AdminUserSecretName, lb.Status.Gitea.AdminUserSecretNamespace)
+		return "", "", fmt.Errorf("%s key not found in secret %s in %s ns", giteaAdminUsernameKey, repo.Spec.SecretRef.Name, repo.Spec.SecretRef.Namespace)
 	}
 	password, ok := secret.Data[giteaAdminPasswordKey]
 	if !ok {
-		return "", "", fmt.Errorf("%s key not found in secret %s in %s ns", giteaAdminPasswordKey, lb.Status.Gitea.AdminUserSecretName, lb.Status.Gitea.AdminUserSecretNamespace)
+		return "", "", fmt.Errorf("%s key not found in secret %s in %s ns", giteaAdminPasswordKey, repo.Spec.SecretRef.Name, repo.Spec.SecretRef.Namespace)
 	}
 	return string(username), string(password), nil
 }
@@ -90,26 +85,6 @@ func (r *RepositoryReconciler) getBasicAuth(ctx context.Context, repo *v1alpha1.
 		Username: u,
 		Password: p,
 	}, nil
-}
-
-func (r *RepositoryReconciler) getLocalBuild(ctx context.Context, repo *v1alpha1.GitRepository) (v1alpha1.Localbuild, error) {
-	if repo.ObjectMeta.OwnerReferences != nil {
-		for i := range repo.ObjectMeta.OwnerReferences {
-			ref := repo.ObjectMeta.OwnerReferences[i]
-			if ref.Kind == "Localbuild" {
-				var lb v1alpha1.Localbuild
-				err := r.Client.Get(ctx, types.NamespacedName{
-					Name: ref.Name,
-				}, &lb)
-				if err != nil {
-					return v1alpha1.Localbuild{}, err
-				}
-
-				return lb, nil
-			}
-		}
-	}
-	return v1alpha1.Localbuild{}, fmt.Errorf("local build not found for %s", repo.Name)
 }
 
 func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

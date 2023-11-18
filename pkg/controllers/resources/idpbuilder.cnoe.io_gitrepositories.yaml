@@ -36,6 +36,18 @@ spec:
                 description: GitURL is the base URL of Git server
                 pattern: ^https?:\/\/.+$
                 type: string
+              secretRef:
+                description: SecretRef is the reference to secret that contain Git
+                  server credentials
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
               source:
                 properties:
                   embeddedAppName:
