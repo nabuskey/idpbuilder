@@ -91,8 +91,7 @@ func (c *Cluster) getConfig() ([]byte, error) {
 }
 
 func NewCluster(name, kubeVersion, kubeConfigPath, kindConfigPath, extraPortsMapping string) (*Cluster, error) {
-	provider := cluster.NewProvider(cluster.ProviderWithDocker())
-
+	provider := cluster.NewProvider(GetDefault())
 	return &Cluster{
 		provider:          provider,
 		name:              name,
@@ -156,4 +155,22 @@ func (c *Cluster) Reconcile(ctx context.Context, recreate bool) error {
 
 func (c *Cluster) ExportKubeConfig(name string, internal bool) error {
 	return c.provider.ExportKubeConfig(name, c.kubeConfigPath, internal)
+}
+
+// GetDefault was taken from the kind internal package.
+// https://github.com/kubernetes-sigs/kind/blob/a4bcc7b382d6f2d4fc8d83d6d8ce0c2d44ce2419/pkg/internal/runtime/runtime.go#L11
+func GetDefault() cluster.ProviderOption {
+	switch p := os.Getenv("KIND_EXPERIMENTAL_PROVIDER"); p {
+	case "":
+		return nil
+	case "podman":
+		fmt.Println("using podman due to KIND_EXPERIMENTAL_PROVIDER")
+		return cluster.ProviderWithPodman()
+	case "docker":
+		fmt.Println("using docker due to KIND_EXPERIMENTAL_PROVIDER")
+		return cluster.ProviderWithDocker()
+	default:
+		fmt.Printf("ignoring unknown value %q for KIND_EXPERIMENTAL_PROVIDER", p)
+		return nil
+	}
 }
