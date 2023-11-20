@@ -15,8 +15,9 @@ const (
 	giteaNamespace   = "gitea"
 	giteaAdminSecret = "gitea-admin-secret"
 	// this is the URL accessible outside cluster. resolves to localhost
-	giteaIngressURL = "http://gitea.cnoe.localtest.me:3000"
-	// this is the URL accessible within cluster for ArgoCD to fetch resources
+	giteaIngressURL = "http://gitea.cnoe.localtest.me:8880"
+	// this is the URL accessible within cluster for ArgoCD to fetch resources.
+	// resolves to cluster ip
 	giteaSvcURL = "http://my-gitea-http.gitea.svc.cluster.local:3000"
 )
 

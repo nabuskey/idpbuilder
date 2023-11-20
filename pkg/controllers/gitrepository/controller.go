@@ -52,7 +52,7 @@ func getRepositoryName(repo v1alpha1.GitRepository) string {
 }
 
 func getOrganizationName(repo v1alpha1.GitRepository) string {
-	return fmt.Sprintf("%s-%s", globals.ProjectName, repo.Namespace)
+	return globals.ProjectName
 }
 
 func (r *RepositoryReconciler) getCredentials(ctx context.Context, repo *v1alpha1.GitRepository) (string, string, error) {
@@ -225,7 +225,7 @@ func reconcileRepo(giteaClient GiteaClient, repo *v1alpha1.GitRepository) (*gite
 	resp, repoResp, err := giteaClient.GetRepo(getOrganizationName(*repo), getRepositoryName(*repo))
 	if err != nil {
 		if repoResp.StatusCode == 404 {
-			createResp, _, CErr := giteaClient.CreateOrgRepo(getOrganizationName(*repo), gitea.CreateRepoOption{
+			createResp, _, CErr := giteaClient.CreateRepo(gitea.CreateRepoOption{
 				Name:        getRepositoryName(*repo),
 				Description: fmt.Sprintf("created by Git Repository controller for %s in %s namespace", repo.Name, repo.Namespace),
 				// we should reconsider this when targeting non-local clusters.
