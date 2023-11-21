@@ -6,7 +6,7 @@ import (
 
 type GitRepositorySpec struct {
 	Source GitRepositorySource `json:"source,omitempty"`
-	// GitURL is the base URL of Git server
+	// GitURL is the base URL of Git server used for API calls.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=`^https?:\/\/.+$`
 	GitURL string `json:"gitURL"`
@@ -25,7 +25,7 @@ type GitRepositorySource struct {
 	Path string `json:"path"`
 	// Type is the source type.
 	// +kubebuilder:validation:Enum:=local;embedded
-	// +kubebuilder:default:=local
+	// +kubebuilder:default:=embedded
 	Type string `json:"type"`
 }
 

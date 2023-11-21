@@ -9,7 +9,6 @@ import (
 
 	"code.gitea.io/sdk/gitea"
 	"github.com/cnoe-io/idpbuilder/api/v1alpha1"
-	"github.com/cnoe-io/idpbuilder/globals"
 	"github.com/cnoe-io/idpbuilder/pkg/controllers/localbuild"
 	"github.com/cnoe-io/idpbuilder/pkg/util"
 	"github.com/go-git/go-git/v5"
@@ -52,7 +51,7 @@ func getRepositoryName(repo v1alpha1.GitRepository) string {
 }
 
 func getOrganizationName(repo v1alpha1.GitRepository) string {
-	return globals.ProjectName
+	return "giteaAdmin"
 }
 
 func (r *RepositoryReconciler) getCredentials(ctx context.Context, repo *v1alpha1.GitRepository) (string, string, error) {

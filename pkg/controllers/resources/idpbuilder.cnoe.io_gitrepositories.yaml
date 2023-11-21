@@ -33,7 +33,7 @@ spec:
           spec:
             properties:
               gitURL:
-                description: GitURL is the base URL of Git server
+                description: GitURL is the base URL of Git server used for API calls.
                 pattern: ^https?:\/\/.+$
                 type: string
               secretRef:
@@ -64,7 +64,7 @@ spec:
                       Type is set to local.
                     type: string
                   type:
-                    default: local
+                    default: embedded
                     description: Type is the source type.
                     enum:
                     - local

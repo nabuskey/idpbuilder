@@ -252,6 +252,7 @@ func (r *LocalbuildReconciler) ReconcileArgoAppsWithGitServer(ctx context.Contex
 				repoUrl,
 				embedApp.Path,
 				defaultArgoCDProjectName,
+				"argocd",
 				nil,
 			)
 
@@ -283,72 +284,85 @@ func (r *LocalbuildReconciler) ReconcileArgoAppsWithGitea(ctx context.Context, r
 
 	// push bootstrap app manifests to Gitea. let ArgoCD take over
 	// will need a way to filter them based on user input
-	_, err := r.reconcileBootstrapApps(ctx, req, resource)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("reconciling bootstrap apps %w", err)
+	bootStrapApps := []string{"argocd", "nginx", "gitea"}
+	for _, n := range bootStrapApps {
+		result, err := r.reconcileEmbeddedApp(ctx, n, resource)
+		if err != nil {
+			return result, fmt.Errorf("reconciling bootstrap apps %w", err)
+		}
 	}
-	_, err = r.reconcileEmbeddedApps(ctx, req, resource)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("reconciling embedded apps %w", err)
+	// do the same for embedded applications
+	for _, embedApp := range apps.EmbedApps {
+		result, err := r.reconcileEmbeddedApp(ctx, embedApp.Name, resource)
+		if err != nil {
+			return result, fmt.Errorf("reconciling embedded apps %w", err)
+		}
 	}
+
 	// TODO: this needs to be removed for local file syncs.
 	r.shouldShutdown = true
 	return ctrl.Result{}, nil
 }
 
-func (r *LocalbuildReconciler) reconcileEmbeddedApps(ctx context.Context, req ctrl.Request, resource *v1alpha1.Localbuild) (ctrl.Result, error) {
-	return ctrl.Result{}, nil
-}
+func (r *LocalbuildReconciler) reconcileEmbeddedApp(ctx context.Context, appName string, resource *v1alpha1.Localbuild) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
 
-func (r *LocalbuildReconciler) reconcileBootstrapApps(ctx context.Context, req ctrl.Request, resource *v1alpha1.Localbuild) (ctrl.Result, error) {
-	bootStrapApps := []string{"argocd", "nginx", "gitea"}
-	for _, n := range bootStrapApps {
-		repo := &v1alpha1.GitRepository{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      n,
-				Namespace: globals.GetProjectNamespace(resource.Name),
+	logger.Info("Ensuring Argo Application", "name", appName)
+	repo := &v1alpha1.GitRepository{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      appName,
+			Namespace: globals.GetProjectNamespace(resource.Name),
+		},
+		Spec: v1alpha1.GitRepositorySpec{
+			Source: v1alpha1.GitRepositorySource{
+				EmbeddedAppName: appName,
+				Type:            "embedded",
 			},
-			Spec: v1alpha1.GitRepositorySpec{
-				Source: v1alpha1.GitRepositorySource{
-					EmbeddedAppName: n,
-				},
-				GitURL: resource.Status.Gitea.ExternalURL,
+			GitURL: resource.Status.Gitea.ExternalURL,
+			SecretRef: v1alpha1.SecretReference{
+				Name:      resource.Status.Gitea.AdminUserSecretName,
+				Namespace: resource.Status.Gitea.AdminUserSecretNamespace,
 			},
-		}
+		},
+	}
 
-		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, repo, func() error {
-			if err := controllerutil.SetControllerReference(resource, repo, r.Scheme); err != nil {
-				return err
-			}
-			return nil
-		})
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("creating %s repo CR", n)
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, repo, func() error {
+		if err := controllerutil.SetControllerReference(resource, repo, r.Scheme); err != nil {
+			return err
 		}
+		return nil
+	})
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("creating %s repo CR: %w", appName, err)
+	}
 
-		app := &argov1alpha1.Application{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      n,
-				Namespace: "argocd",
-			},
-		}
+	app := &argov1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      appName,
+			Namespace: "argocd",
+		},
+	}
+
+	if err := controllerutil.SetControllerReference(resource, app, r.Scheme); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	err = r.Client.Get(ctx, client.ObjectKeyFromObject(app), app)
+	if err != nil && errors.IsNotFound(err) {
 		localbuild.SetApplicationSpec(
 			app,
-			resource.Status.Gitea.InternalURL,
+			getRepositoryURL(repo.Namespace, repo.Name, resource.Status.Gitea.InternalURL),
 			".",
 			defaultArgoCDProjectName,
+			appName,
 			nil,
 		)
-		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, app, func() error {
-			if err := controllerutil.SetControllerReference(resource, app, r.Scheme); err != nil {
-				return err
-			}
-			return nil
-		})
+		err = r.Client.Create(ctx, app)
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("creating %s argo app CR", n)
+			return ctrl.Result{}, fmt.Errorf("creating %s app CR: %w", appName, err)
 		}
 	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -357,7 +371,7 @@ func GetEmbeddedRawInstallResources(name string) ([][]byte, error) {
 	case "argocd":
 		return RawArgocdInstallResources()
 	case "backstage", "crossplane":
-		return util.ConvertFSToBytes(apps.EmbeddedAppsFS, name)
+		return util.ConvertFSToBytes(apps.EmbeddedAppsFS, fmt.Sprintf("srv/%s", name))
 	case "gitea":
 		return RawGiteaInstallResources()
 	case "nginx":
