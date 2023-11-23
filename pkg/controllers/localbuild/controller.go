@@ -3,6 +3,8 @@ package localbuild
 import (
 	"context"
 	"fmt"
+	"github.com/cnoe-io/idpbuilder/pkg/k8s"
+	"os"
 	"time"
 
 	argov1alpha1 "github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
@@ -298,12 +300,20 @@ func (r *LocalbuildReconciler) ReconcileArgoAppsWithGitea(ctx context.Context, r
 			return result, fmt.Errorf("reconciling embedded apps %w", err)
 		}
 	}
-
-	shutdown, err := r.shouldShutDown(ctx, resource)
-	if err != nil {
-		return ctrl.Result{Requeue: true}, err
+	if resource.Spec.PackageConfigs.ExtraPackages != nil {
+		for i := range resource.Spec.PackageConfigs.ExtraPackages {
+			result, err := r.reconcileApps(ctx, resource, resource.Spec.PackageConfigs.ExtraPackages[i])
+			if err != nil {
+				return result, err
+			}
+		}
 	}
-	r.shouldShutdown = shutdown
+
+	//shutdown, err := r.shouldShutDown(ctx, resource)
+	//if err != nil {
+	//	return ctrl.Result{Requeue: true}, err
+	//}
+	r.shouldShutdown = false
 
 	return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 }
@@ -383,6 +393,73 @@ func (r *LocalbuildReconciler) shouldShutDown(ctx context.Context, resource *v1a
 		}
 	}
 	return true, nil
+}
+
+func (r *LocalbuildReconciler) reconcileApps(ctx context.Context, resource *v1alpha1.Localbuild, pkg v1alpha1.ExtraPackageConfigSpec) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	s := runtime.NewScheme()
+	err := argov1alpha1.SchemeBuilder.AddToScheme(s)
+	if err != nil {
+		panic(err)
+	}
+	f, err := os.ReadFile(pkg.ArgoApplicationFile)
+	if err != nil {
+		panic(err)
+	}
+
+	objs, err := k8s.ConvertYamlToObjects(s, f)
+	if err != nil {
+		panic(err)
+	}
+	app := objs[0].(*argov1alpha1.Application)
+	appName := app.GetName()
+	logger.Info("Ensuring Argo Application", "name", appName)
+	if pkg.Directory != "" {
+		repo := &v1alpha1.GitRepository{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      appName,
+				Namespace: globals.GetProjectNamespace(resource.Name),
+			},
+			Spec: v1alpha1.GitRepositorySpec{
+				Source: v1alpha1.GitRepositorySource{
+					Path: pkg.Directory,
+					Type: "local",
+				},
+				GitURL: resource.Status.Gitea.ExternalURL,
+				SecretRef: v1alpha1.SecretReference{
+					Name:      resource.Status.Gitea.AdminUserSecretName,
+					Namespace: resource.Status.Gitea.AdminUserSecretNamespace,
+				},
+			},
+		}
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, repo, func() error {
+			if err := controllerutil.SetControllerReference(resource, repo, r.Scheme); err != nil {
+				return err
+			}
+			return nil
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("creating %s repo CR: %w", appName, err)
+		}
+	}
+
+	if err := controllerutil.SetControllerReference(resource, app, r.Scheme); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	err = r.Client.Get(ctx, client.ObjectKeyFromObject(app), app)
+	if err != nil && errors.IsNotFound(err) {
+		if pkg.Directory != "" {
+			app.Spec.Source.RepoURL = getRepositoryURL(globals.GetProjectNamespace(resource.Name), appName, resource.Status.Gitea.InternalURL)
+		}
+		err = r.Client.Create(ctx, app)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("creating %s app CR: %w", appName, err)
+		}
+	}
+
+	return ctrl.Result{}, nil
 }
 
 func GetEmbeddedRawInstallResources(name string) ([][]byte, error) {

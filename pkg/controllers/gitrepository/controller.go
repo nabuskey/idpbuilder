@@ -147,7 +147,7 @@ func (r *RepositoryReconciler) reconcileGitRepo(ctx context.Context, repo *v1alp
 		return ctrl.Result{Requeue: true, RequeueAfter: requeueTime}, fmt.Errorf("failed to reconcile repo content %w", err)
 	}
 	repo.Status.Synced = true
-	return ctrl.Result{Requeue: true, RequeueAfter: requeueTime}, nil
+	return ctrl.Result{Requeue: true, RequeueAfter: time.Second * 15}, nil
 }
 
 func (r *RepositoryReconciler) reconcileRepoContent(ctx context.Context, repo *v1alpha1.GitRepository, giteaRepo *gitea.Repository) error {
