@@ -302,7 +302,7 @@ func (r *LocalbuildReconciler) ReconcileArgoAppsWithGitea(ctx context.Context, r
 	}
 	if resource.Spec.PackageConfigs.ExtraPackages != nil {
 		for i := range resource.Spec.PackageConfigs.ExtraPackages {
-			result, err := r.reconcileApps(ctx, resource, resource.Spec.PackageConfigs.ExtraPackages[i])
+			result, err := r.reconcileExtraPkg(ctx, resource, resource.Spec.PackageConfigs.ExtraPackages[i])
 			if err != nil {
 				return result, err
 			}
@@ -395,27 +395,35 @@ func (r *LocalbuildReconciler) shouldShutDown(ctx context.Context, resource *v1a
 	return true, nil
 }
 
-func (r *LocalbuildReconciler) reconcileApps(ctx context.Context, resource *v1alpha1.Localbuild, pkg v1alpha1.ExtraPackageConfigSpec) (ctrl.Result, error) {
+func (r *LocalbuildReconciler) reconcileExtraPkg(ctx context.Context, resource *v1alpha1.Localbuild, pkg v1alpha1.ExtraPackageConfigSpec) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	s := runtime.NewScheme()
 	err := argov1alpha1.SchemeBuilder.AddToScheme(s)
 	if err != nil {
-		panic(err)
+		return ctrl.Result{}, fmt.Errorf("adding argocd application scheme: %w", err)
 	}
 	f, err := os.ReadFile(pkg.ArgoApplicationFile)
 	if err != nil {
-		panic(err)
+		return ctrl.Result{}, fmt.Errorf("reading argocd application file: %w", err)
 	}
 
 	objs, err := k8s.ConvertYamlToObjects(s, f)
 	if err != nil {
-		panic(err)
+		return ctrl.Result{}, fmt.Errorf("converting yaml to K8s object: %w", err)
 	}
-	app := objs[0].(*argov1alpha1.Application)
+	if len(objs) == 0 {
+		return ctrl.Result{}, fmt.Errorf("argocd application file resulted in 0 kubernetes object: %w", err)
+	}
+
+	app, ok := objs[0].(*argov1alpha1.Application)
+	if !ok {
+		return ctrl.Result{}, fmt.Errorf("specified argocd application file could not be parsed as application object. path: %s", pkg.ArgoApplicationFile)
+	}
 	appName := app.GetName()
-	logger.Info("Ensuring Argo Application", "name", appName)
+
 	if pkg.Directory != "" {
+		logger.Info("creating or updating repository for %s", pkg.Directory)
 		repo := &v1alpha1.GitRepository{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      appName,
@@ -448,15 +456,29 @@ func (r *LocalbuildReconciler) reconcileApps(ctx context.Context, resource *v1al
 		return ctrl.Result{}, err
 	}
 
-	err = r.Client.Get(ctx, client.ObjectKeyFromObject(app), app)
-	if err != nil && errors.IsNotFound(err) {
-		if pkg.Directory != "" {
-			app.Spec.Source.RepoURL = getRepositoryURL(globals.GetProjectNamespace(resource.Name), appName, resource.Status.Gitea.InternalURL)
+	var foundAppObj *argov1alpha1.Application
+	err = r.Client.Get(ctx, client.ObjectKeyFromObject(app), foundAppObj)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			if pkg.Directory != "" {
+				app.Spec.Source.RepoURL = getRepositoryURL(globals.GetProjectNamespace(resource.Name), appName, resource.Status.Gitea.InternalURL)
+			}
+			err = r.Client.Create(ctx, app)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("creating %s app CR: %w", appName, err)
+			}
+
+			return ctrl.Result{}, nil
 		}
-		err = r.Client.Create(ctx, app)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("creating %s app CR: %w", appName, err)
-		}
+		return ctrl.Result{}, fmt.Errorf("getting argocd application object: %w", err)
+	}
+
+	foundAppObj.Spec = app.Spec
+	foundAppObj.ObjectMeta.Annotations = app.Annotations
+	foundAppObj.ObjectMeta.Labels = app.Labels
+	err = r.Client.Update(ctx, foundAppObj)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("updating argocd application object %s: %w", appName, err)
 	}
 
 	return ctrl.Result{}, nil
