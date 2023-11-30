@@ -23,7 +23,7 @@ var (
 	kubeVersion       string
 	extraPortsMapping string
 	kindConfigPath    string
-	extraPackagesDir  string
+	extraPackagesDirs []string
 )
 
 var CreateCmd = &cobra.Command{
@@ -39,7 +39,7 @@ func init() {
 	CreateCmd.PersistentFlags().StringVar(&kubeVersion, "kubeVersion", "v1.26.3", "Version of the kind kubernetes cluster to create.")
 	CreateCmd.PersistentFlags().StringVar(&extraPortsMapping, "extraPorts", "", "List of extra ports to expose on the docker container and kubernetes cluster as nodePort (e.g. \"22:32222,9090:39090,etc\").")
 	CreateCmd.PersistentFlags().StringVar(&kindConfigPath, "kindConfig", "", "Path of the kind config file to be used instead of the default.")
-	CreateCmd.Flags().StringVar(&extraPackagesDir, "package-dir", "", "path to packages")
+	CreateCmd.Flags().StringSliceVarP(&extraPackagesDirs, "package-dir", "", []string{}, "paths to custom packages")
 
 	zapfs := flag.NewFlagSet("zap", flag.ExitOnError)
 	opts := zap.Options{
@@ -62,16 +62,16 @@ func create(cmd *cobra.Command, args []string) error {
 		os.Exit(1)
 	}
 
-	var absPath string
-	if extraPackagesDir != "" {
-		p, err := getPackageAbsDir(extraPackagesDir)
+	var absPaths []string
+	if len(extraPackagesDirs) > 0 {
+		p, err := getPackageAbsDirs(extraPackagesDirs)
 		if err != nil {
 			return err
 		}
-		absPath = p
+		absPaths = p
 	}
 
-	b := build.NewBuild(buildName, kubeVersion, kubeConfigPath, kindConfigPath, extraPortsMapping, absPath, k8s.GetScheme(), ctxCancel)
+	b := build.NewBuild(buildName, kubeVersion, kubeConfigPath, kindConfigPath, extraPortsMapping, absPaths, k8s.GetScheme(), ctxCancel)
 
 	if err := b.Run(ctx, recreateCluster); err != nil {
 		return err
@@ -79,16 +79,23 @@ func create(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func getPackageAbsDir(path string) (string, error) {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return "", fmt.Errorf("failed to validate path %s : %w", path, err)
+func getPackageAbsDirs(paths []string) ([]string, error) {
+	out := make([]string, len(paths), len(paths))
+	for i := range paths {
+		path := paths[i]
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to validate path %s : %w", path, err)
+		}
+		f, err := os.Stat(absPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to validate path %s : %w", absPath, err)
+		}
+		if !f.IsDir() {
+			return nil, fmt.Errorf("given path is not a directory. %s", absPath)
+		}
+		out[i] = absPath
 	}
 
-	_, err = os.ReadDir(absPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read directory %s : %w", absPath, err)
-	}
-
-	return absPath, nil
+	return out, nil
 }

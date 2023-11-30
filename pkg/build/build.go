@@ -8,18 +8,13 @@ import (
 	"github.com/cnoe-io/idpbuilder/pkg/controllers"
 	"github.com/cnoe-io/idpbuilder/pkg/kind"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"os"
-	"path/filepath"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"strings"
 )
 
 var (
@@ -32,19 +27,19 @@ type Build struct {
 	kubeConfigPath    string
 	kubeVersion       string
 	extraPortsMapping string
-	extraPackagesDir  string
+	customPackageDirs []string
 	scheme            *runtime.Scheme
 	CancelFunc        context.CancelFunc
 }
 
-func NewBuild(name, kubeVersion, kubeConfigPath, kindConfigPath, extraPortsMapping, extraPackagesDir string, scheme *runtime.Scheme, ctxCancel context.CancelFunc) *Build {
+func NewBuild(name, kubeVersion, kubeConfigPath, kindConfigPath, extraPortsMapping string, customPackageDirs []string, scheme *runtime.Scheme, ctxCancel context.CancelFunc) *Build {
 	return &Build{
 		name:              name,
 		kindConfigPath:    kindConfigPath,
 		kubeConfigPath:    kubeConfigPath,
 		kubeVersion:       kubeVersion,
 		extraPortsMapping: extraPortsMapping,
-		extraPackagesDir:  extraPackagesDir,
+		customPackageDirs: customPackageDirs,
 		scheme:            scheme,
 		CancelFunc:        ctxCancel,
 	}
@@ -106,11 +101,6 @@ func (b *Build) RunControllers(ctx context.Context, mgr manager.Manager, exitCh 
 func (b *Build) Run(ctx context.Context, recreateCluster bool) error {
 	managerExit := make(chan error)
 
-	pkgs, err := getPackages(b.extraPackagesDir)
-	if err != nil {
-		return err
-	}
-
 	setupLog.Info("Creating kind cluster")
 	if err := b.ReconcileKindCluster(ctx, recreateCluster); err != nil {
 		return err
@@ -156,6 +146,8 @@ func (b *Build) Run(ctx context.Context, recreateCluster bool) error {
 		},
 	}
 
+	pkgs, err := getPackages(b.customPackageDirs)
+
 	setupLog.Info("Creating localbuild resource")
 	_, err = controllerutil.CreateOrUpdate(ctx, kubeClient, &localBuild, func() error {
 		localBuild.Spec = v1alpha1.LocalbuildSpec{
@@ -170,7 +162,7 @@ func (b *Build) Run(ctx context.Context, recreateCluster bool) error {
 					// hint: for the old behavior, replace Type value below with globals.GitServerResourcename()
 					Type: globals.GiteaResourceName(),
 				},
-				ExtraPackages: pkgs,
+				CustomPackages: pkgs,
 			},
 		}
 		return nil
@@ -189,47 +181,66 @@ func (b *Build) Run(ctx context.Context, recreateCluster bool) error {
 	return err
 }
 
-func getPackages(srcDir string) ([]v1alpha1.ExtraPackageConfigSpec, error) {
-	if srcDir == "" {
-		return nil, nil
+func getPackages(srcDirs []string) ([]v1alpha1.CustomPackageSpec, error) {
+	out := make([]v1alpha1.CustomPackageSpec, len(srcDirs), len(srcDirs))
+	for i := range srcDirs {
+		out = append(out, v1alpha1.CustomPackageSpec{Directory: srcDirs[i]})
 	}
-	ents, err := os.ReadDir(srcDir)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]v1alpha1.ExtraPackageConfigSpec, 0, 5)
-	for i := range ents {
-		ent := ents[i]
-		if ent.Type().IsRegular() && !ent.IsDir() {
-			fileName := filepath.Join(srcDir, ent.Name())
-			f, err := os.ReadFile(fileName)
-			if err != nil {
-				return nil, err
-			}
-			o := &unstructured.Unstructured{}
 
-			_, gvk, err := scheme.Codecs.UniversalDeserializer().Decode(f, nil, o)
-			if err != nil {
-				continue
-			}
-			a := o.UnstructuredContent()["spec"]
-			b := a.(map[string]any)["source"].(map[string]any)["repoURL"].(string)
-
-			if gvk.Kind == "Application" {
-				spec := v1alpha1.ExtraPackageConfigSpec{
-					ArgoApplicationFile: fileName,
-				}
-				if strings.HasPrefix(b, "cnoe://") {
-					rPath := strings.TrimPrefix(b, "cnoe://")
-					path, err := filepath.Abs(filepath.Join(srcDir, rPath))
-					if err != nil {
-						panic(err)
-					}
-					spec.Directory = path
-				}
-				out = append(out, spec)
-			}
-		}
-	}
 	return out, nil
+	//if srcDir == "" {
+	//	return nil, nil
+	//}
+	//ents, err := os.ReadDir(srcDir)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//
+	//for i := range ents {
+	//	ent := ents[i]
+	//	if ent.Type().IsRegular() && !ent.IsDir() {
+	//		fileName := filepath.Join(srcDir, ent.Name())
+	//		f, err := os.ReadFile(fileName)
+	//		if err != nil {
+	//			return nil, fmt.Errorf("reading file %s: %w", fileName, err)
+	//		}
+	//
+	//		o := &unstructured.Unstructured{}
+	//		_, gvk, err := scheme.Codecs.UniversalDeserializer().Decode(f, nil, o)
+	//		if err != nil {
+	//			continue
+	//		}
+	//		if gvk.Kind == "Application" && gvk.Group == "argoproj.io" {
+	//			a := o.UnstructuredContent()["spec"]
+	//			b := a.(map[string]any)["source"].(map[string]any)["repoURL"].(string)
+	//
+	//			spec := v1alpha1.CustomPackageSpec{
+	//				ArgoApplicationFile:        fileName,
+	//				ArgoCDApplicationName:      o.GetName(),
+	//				ArgoCDApplicationNamespace: o.GetNamespace(),
+	//			}
+	//			isCNOEPath, rPath := util.IsCNOEPath(b)
+	//			if !isCNOEPath {
+	//				out = append(out, spec)
+	//				continue
+	//			}
+	//
+	//			path, fErr := filepath.Abs(filepath.Join(srcDir, rPath))
+	//			if fErr != nil {
+	//				return nil, fmt.Errorf("creating absolute path for %s :%w", ent, err)
+	//			}
+	//			spec.Directory = path
+	//			out = append(out, spec)
+	//		}
+	//	}
+	//}
+	//return out, nil
 }
+
+//func getRepoUrl(appObj *unstructured.Unstructured) (string, error) {
+//	a, ok := appObj.UnstructuredContent()["spec"]
+//	if !ok {
+//		return "", fmt.Errorf("spec field doesn't exit")
+//	}
+//	b := a.(map[string]any)["source"].(map[string]any)["repoURL"].(string)
+//}

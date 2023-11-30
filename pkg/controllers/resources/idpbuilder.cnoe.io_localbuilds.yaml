@@ -43,6 +43,17 @@ spec:
                         description: Enabled controls whether to install ArgoCD.
                         type: boolean
                     type: object
+                  customPackages:
+                    items:
+                      description: CustomPackageSpec controls the installation of
+                        the custom argocd applications.
+                      properties:
+                        directory:
+                          description: Directory specifies the absolute path to the
+                            directory which contains raw manifests to be installed
+                          type: string
+                      type: object
+                    type: array
                   embeddedArgoApplicationsPackageConfigs:
                     description: EmbeddedArgoApplicationsPackageConfigSpec Controls
                       the installation of the embedded argo applications.
@@ -52,23 +63,6 @@ spec:
                           argo applications and the associated GitServer
                         type: boolean
                     type: object
-                  extraPackages:
-                    items:
-                      description: ExtraPackageConfigSpec Controls the installation
-                        of the extra argo applications.
-                      properties:
-                        argoApplicationFile:
-                          description: ArgoApplicationFile specifies the absolute
-                            path to the ArgoCD application file
-                          type: string
-                        directory:
-                          description: Directory specifies the absolute path to the
-                            directory which contains raw manifests to be installed
-                          type: string
-                      required:
-                      - argoApplicationFile
-                      type: object
-                    type: array
                   gitConfig:
                     description: GitConfigSpec controls what git server to use for
                       the idpbuilder It can take on the values of either gitea or

@@ -30,15 +30,13 @@ type PackageConfigsSpec struct {
 	GitConfig                GitConfigSpec                             `json:"gitConfig,omitempty"`
 	Argo                     ArgoPackageConfigSpec                     `json:"argoPackageConfigs,omitempty"`
 	EmbeddedArgoApplications EmbeddedArgoApplicationsPackageConfigSpec `json:"embeddedArgoApplicationsPackageConfigs,omitempty"`
-	ExtraPackages            []ExtraPackageConfigSpec                  `json:"extraPackages,omitempty"`
+	CustomPackages           []CustomPackageSpec                       `json:"customPackages,omitempty"`
 }
 
-// ExtraPackageConfigSpec Controls the installation of the extra argo applications.
-type ExtraPackageConfigSpec struct {
+// CustomPackageSpec controls the installation of the custom argocd applications.
+type CustomPackageSpec struct {
 	// Directory specifies the absolute path to the directory which contains raw manifests to be installed
 	Directory string `json:"directory,omitempty"`
-	// ArgoApplicationFile specifies the absolute path to the ArgoCD application file
-	ArgoApplicationFile string `json:"argoApplicationFile"`
 }
 
 type LocalbuildSpec struct {
