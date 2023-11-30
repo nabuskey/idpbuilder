@@ -184,7 +184,7 @@ func (b *Build) Run(ctx context.Context, recreateCluster bool) error {
 func getPackages(srcDirs []string) ([]v1alpha1.CustomPackageSpec, error) {
 	out := make([]v1alpha1.CustomPackageSpec, len(srcDirs), len(srcDirs))
 	for i := range srcDirs {
-		out = append(out, v1alpha1.CustomPackageSpec{Directory: srcDirs[i]})
+		out[i] = v1alpha1.CustomPackageSpec{Directory: srcDirs[i]}
 	}
 
 	return out, nil

@@ -323,31 +323,9 @@ func (r *LocalbuildReconciler) ReconcileArgoAppsWithGitea(ctx context.Context, r
 func (r *LocalbuildReconciler) reconcileEmbeddedApp(ctx context.Context, appName string, resource *v1alpha1.Localbuild) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	logger.Info("Ensuring Argo Application", "name", appName)
-	repo := &v1alpha1.GitRepository{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      appName,
-			Namespace: globals.GetProjectNamespace(resource.Name),
-		},
-		Spec: v1alpha1.GitRepositorySpec{
-			Source: v1alpha1.GitRepositorySource{
-				EmbeddedAppName: appName,
-				Type:            "embedded",
-			},
-			GitURL: resource.Status.Gitea.ExternalURL,
-			SecretRef: v1alpha1.SecretReference{
-				Name:      resource.Status.Gitea.AdminUserSecretName,
-				Namespace: resource.Status.Gitea.AdminUserSecretNamespace,
-			},
-		},
-	}
+	logger.Info("Ensuring embedded ArgoCD Application", "name", appName)
+	repo, err := r.reconcileGitRepo(ctx, resource, "embedded", appName, appName, "")
 
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, repo, func() error {
-		if err := controllerutil.SetControllerReference(resource, repo, r.Scheme); err != nil {
-			return err
-		}
-		return nil
-	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("creating %s repo CR: %w", appName, err)
 	}
@@ -443,19 +421,26 @@ func (r *LocalbuildReconciler) reconcileCustomPkg(ctx context.Context, resource 
 			continue
 		}
 
+		logger.Info("Ensuring custom ArgoCD Application", "name", appName)
 		if app.Spec.HasMultipleSources() {
 			for j := range app.Spec.Sources {
 				s := app.Spec.Sources[j]
-				res, sErr := r.reconcileCustomPkgRepo(ctx, resource, pkg, s.RepoURL, appName)
+				res, repo, sErr := r.reconcileArgocdSource(ctx, resource, appName, pkg.Directory, s.RepoURL)
 				if sErr != nil {
 					return res, sErr
+				}
+				if repo != nil {
+					s.RepoURL = getRepositoryURL(repo.Namespace, repo.Name, resource.Status.Gitea.InternalURL)
 				}
 			}
 		} else {
 			s := app.Spec.Source
-			res, sErr := r.reconcileCustomPkgRepo(ctx, resource, pkg, s.RepoURL, appName)
+			res, repo, sErr := r.reconcileArgocdSource(ctx, resource, appName, pkg.Directory, s.RepoURL)
 			if sErr != nil {
 				return res, sErr
+			}
+			if repo != nil {
+				s.RepoURL = getRepositoryURL(repo.Namespace, repo.Name, resource.Status.Gitea.InternalURL)
 			}
 		}
 
@@ -480,31 +465,40 @@ func (r *LocalbuildReconciler) reconcileCustomPkg(ctx context.Context, resource 
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("updating argocd application object %s: %w", appName, err)
 		}
-
 	}
 
 	return ctrl.Result{}, nil
 }
 
-// create a gitrepository object if repoURL is given in the form cnoe://<path>/<to>/<dir>
-func (r *LocalbuildReconciler) reconcileCustomPkgRepo(ctx context.Context, resource *v1alpha1.Localbuild, pkg v1alpha1.CustomPackageSpec, repoURL, appName string) (ctrl.Result, error) {
-	process, absPath, err := isCNOEDirectory(pkg.Directory, repoURL)
+func (r *LocalbuildReconciler) reconcileArgocdSource(ctx context.Context, resource *v1alpha1.Localbuild, appName, pkgDir, repoURL string) (ctrl.Result, *v1alpha1.GitRepository, error) {
+	logger := log.FromContext(ctx)
+
+	process, absPath, err := isCNOEDirectory(pkgDir, repoURL)
 	if err != nil {
-		return ctrl.Result{RequeueAfter: time.Second * 60}, err
+		logger.Error(err, "processing argocd app source", "dir", pkgDir, "repoURL", repoURL)
+		return ctrl.Result{RequeueAfter: time.Second * 60}, nil, nil
 	}
 	if !process {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, nil, nil
 	}
 
+	repo, err := r.reconcileGitRepo(ctx, resource, "local", repoName(appName, absPath), "", absPath)
+	if err != nil {
+		return ctrl.Result{}, nil, err
+	}
+
+	return ctrl.Result{}, repo, nil
+}
+
+func (r *LocalbuildReconciler) reconcileGitRepo(ctx context.Context, resource *v1alpha1.Localbuild, repoType, repoName, embeddedName, absPath string) (*v1alpha1.GitRepository, error) {
 	repo := &v1alpha1.GitRepository{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      repoName(appName, absPath),
+			Name:      repoName,
 			Namespace: globals.GetProjectNamespace(resource.Name),
 		},
 		Spec: v1alpha1.GitRepositorySpec{
 			Source: v1alpha1.GitRepositorySource{
-				Path: absPath,
-				Type: "local",
+				Type: repoType,
 			},
 			GitURL: resource.Status.Gitea.ExternalURL,
 			SecretRef: v1alpha1.SecretReference{
@@ -513,14 +507,21 @@ func (r *LocalbuildReconciler) reconcileCustomPkgRepo(ctx context.Context, resou
 			},
 		},
 	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, repo, func() error {
+
+	if repoType == "embedded" {
+		repo.Spec.Source.EmbeddedAppName = embeddedName
+	} else {
+		repo.Spec.Source.Path = absPath
+	}
+
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, repo, func() error {
 		if err := controllerutil.SetControllerReference(resource, repo, r.Scheme); err != nil {
 			return err
 		}
 		return nil
 	})
 
-	return ctrl.Result{}, err
+	return repo, err
 }
 
 func GetEmbeddedRawInstallResources(name string) ([][]byte, error) {
