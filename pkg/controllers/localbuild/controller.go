@@ -311,11 +311,11 @@ func (r *LocalbuildReconciler) ReconcileArgoAppsWithGitea(ctx context.Context, r
 		}
 	}
 
-	//shutdown, err := r.shouldShutDown(ctx, resource)
-	//if err != nil {
-	//	return ctrl.Result{Requeue: true}, err
-	//}
-	r.shouldShutdown = false
+	shutdown, err := r.shouldShutDown(ctx, resource)
+	if err != nil {
+		return ctrl.Result{Requeue: true}, err
+	}
+	r.shouldShutdown = shutdown
 
 	return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 }
@@ -361,6 +361,9 @@ func (r *LocalbuildReconciler) reconcileEmbeddedApp(ctx context.Context, appName
 }
 
 func (r *LocalbuildReconciler) shouldShutDown(ctx context.Context, resource *v1alpha1.Localbuild) (bool, error) {
+	if len(resource.Spec.PackageConfigs.CustomPackages) > 0 {
+		return false, nil
+	}
 	repos := &v1alpha1.GitRepositoryList{}
 	err := r.Client.List(ctx, repos, client.InNamespace(resource.Namespace))
 	if err != nil {
