@@ -3,6 +3,8 @@ package build
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/cnoe-io/idpbuilder/api/v1alpha1"
 	"github.com/cnoe-io/idpbuilder/pkg/controllers"
 	"github.com/cnoe-io/idpbuilder/pkg/kind"
@@ -14,7 +16,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"time"
 )
 
 var (
@@ -128,7 +129,8 @@ func (b *Build) Run(ctx context.Context, recreateCluster bool) error {
 	setupLog.Info("Creating controller manager")
 	// Create controller manager
 	mgr, err := ctrl.NewManager(kubeConfig, ctrl.Options{
-		Scheme: b.scheme,
+		MetricsBindAddress: "0",
+		Scheme:             b.scheme,
 	})
 	if err != nil {
 		setupLog.Error(err, "Error creating controller manager")
