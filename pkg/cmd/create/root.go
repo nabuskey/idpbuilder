@@ -44,8 +44,7 @@ func init() {
 }
 
 func preCreateE(cmd *cobra.Command, args []string) error {
-	helpers.SetZap()
-	return nil
+	return helpers.SetLogger()
 }
 
 func create(cmd *cobra.Command, args []string) error {

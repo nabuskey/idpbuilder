@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"flag"
 	"fmt"
 	"os"
 
@@ -17,11 +16,7 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	// expose zap flags directly to this cli
-	zapfs := flag.NewFlagSet("zap", flag.ExitOnError)
-	helpers.ZapOptions.BindFlags(zapfs)
-
-	rootCmd.PersistentFlags().AddGoFlagSet(zapfs)
+	rootCmd.PersistentFlags().StringVarP(&helpers.LogLevel, "log-level", "l", "info", helpers.LogLevelMsg)
 	rootCmd.AddCommand(create.CreateCmd)
 }
 
