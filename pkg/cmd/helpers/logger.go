@@ -6,14 +6,17 @@ import (
 	"os"
 	"strings"
 
+	"github.com/cnoe-io/idpbuilder/pkg/logger"
 	"github.com/go-logr/logr"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 var (
-	LogLevel    string
-	LogLevelMsg = "Set the log verbosity. Supported values are: debug, info, warn, and error."
+	LogLevel         string
+	LogLevelMsg      = "Set the log verbosity. Supported values are: debug, info, warn, and error."
+	ColoredOutput    bool
+	ColoredOutputMsg = "Specify whether you want colored outputs"
 )
 
 func SetLogger() error {
@@ -21,7 +24,7 @@ func SetLogger() error {
 	if err != nil {
 		return err
 	}
-	slogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: l}))
+	slogger := slog.New(logger.NewHandler(os.Stderr, logger.Options{Level: l, Colored: ColoredOutput}))
 	logger := logr.FromSlogHandler(slogger.Handler())
 	klog.SetLogger(logger)
 	ctrl.SetLogger(logger)

@@ -17,6 +17,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&helpers.LogLevel, "log-level", "l", "info", helpers.LogLevelMsg)
+	rootCmd.PersistentFlags().BoolVarP(&helpers.ColoredOutput, "color", "c", true, helpers.LogLevelMsg)
 	rootCmd.AddCommand(create.CreateCmd)
 }
 
