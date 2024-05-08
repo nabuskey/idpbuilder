@@ -32,28 +32,42 @@ type Build struct {
 	kubeVersion          string
 	extraPortsMapping    string
 	customPackageDirs    []string
+	customPackageUrls    []string
 	packageCustomization map[string]v1alpha1.PackageCustomization
 	exitOnSync           bool
 	scheme               *runtime.Scheme
 	CancelFunc           context.CancelFunc
 }
 
-func NewBuild(name, kubeVersion, kubeConfigPath, kindConfigPath, extraPortsMapping string, cfg util.CorePackageTemplateConfig,
-	customPackageDirs []string, exitOnSync bool, scheme *runtime.Scheme, ctxCancel context.CancelFunc,
-	packageCustomization map[string]v1alpha1.PackageCustomization) *Build {
+type NewBuildOptions struct {
+	Name                 string
+	TemplateData         util.CorePackageTemplateConfig
+	KindConfigPath       string
+	KubeConfigPath       string
+	KubeVersion          string
+	ExtraPortsMapping    string
+	CustomPackageDirs    []string
+	CustomPackageUrls    []string
+	PackageCustomization map[string]v1alpha1.PackageCustomization
+	ExitOnSync           bool
+	Scheme               *runtime.Scheme
+	CancelFunc           context.CancelFunc
+}
 
+func NewBuild(opts NewBuildOptions) *Build {
 	return &Build{
-		name:                 name,
-		kindConfigPath:       kindConfigPath,
-		kubeConfigPath:       kubeConfigPath,
-		kubeVersion:          kubeVersion,
-		extraPortsMapping:    extraPortsMapping,
-		customPackageDirs:    customPackageDirs,
-		packageCustomization: packageCustomization,
-		exitOnSync:           exitOnSync,
-		scheme:               scheme,
-		cfg:                  cfg,
-		CancelFunc:           ctxCancel,
+		name:                 opts.Name,
+		kindConfigPath:       opts.KindConfigPath,
+		kubeConfigPath:       opts.KubeConfigPath,
+		kubeVersion:          opts.KubeVersion,
+		extraPortsMapping:    opts.ExtraPortsMapping,
+		customPackageDirs:    opts.CustomPackageDirs,
+		customPackageUrls:    opts.CustomPackageUrls,
+		packageCustomization: opts.PackageCustomization,
+		exitOnSync:           opts.ExitOnSync,
+		scheme:               opts.Scheme,
+		cfg:                  opts.TemplateData,
+		CancelFunc:           opts.CancelFunc,
 	}
 }
 
@@ -178,6 +192,7 @@ func (b *Build) Run(ctx context.Context, recreateCluster bool) error {
 					PackageCustomization: b.packageCustomization,
 				},
 				CustomPackageDirs: b.customPackageDirs,
+				CustomPackageUrls: b.customPackageUrls,
 			},
 		}
 

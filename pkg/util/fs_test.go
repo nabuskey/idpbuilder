@@ -1,15 +1,21 @@
 package util
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 
 	"github.com/cnoe-io/idpbuilder/globals"
+	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestWriteFS(t *testing.T) {
@@ -71,4 +77,30 @@ func TestWriteFS(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetWorktreeYamlFiles(t *testing.T) {
+	cloneOptions := &git.CloneOptions{
+		URL:               "../..", // avoid remote clone
+		Depth:             1,
+		ShallowSubmodules: true,
+	}
+
+	wt := memfs.New()
+	_, err := git.CloneContext(context.Background(), memory.NewStorage(), wt, cloneOptions)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+
+	paths, err := GetWorktreeYamlFiles("./pkg", wt, true)
+
+	assert.Equal(t, nil, err)
+	assert.NotEqual(t, 0, len(paths))
+	for _, s := range paths {
+		assert.Equal(t, true, strings.HasSuffix(s, "yaml") || strings.HasSuffix(s, "yml"))
+	}
+
+	paths, err = GetWorktreeYamlFiles("./pkg", wt, false)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, 0, len(paths))
 }

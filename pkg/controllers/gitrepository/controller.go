@@ -32,7 +32,7 @@ const (
 	DefaultBranchName     = "main"
 	giteaAdminUsernameKey = "username"
 	giteaAdminPasswordKey = "password"
-	requeueTime           = time.Second * 30
+	requeueTime           = time.Second * 10
 	gitCommitAuthorName   = "git-reconciler"
 	gitCommitAuthorEmail  = "idpbuilder-agent@cnoe.io"
 
@@ -109,9 +109,6 @@ func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	defer r.postProcessReconcile(ctx, req, &gitRepo)
-	if !r.shouldProcess(gitRepo) {
-		return ctrl.Result{Requeue: false}, nil
-	}
 
 	logger.V(1).Info("reconciling GitRepository", "name", req.Name, "namespace", req.Namespace)
 	result, err := r.reconcileGitRepo(ctx, &gitRepo)
@@ -145,8 +142,8 @@ func (r *RepositoryReconciler) reconcileGitRepo(ctx context.Context, repo *v1alp
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
-	client := &http.Client{Transport: tr}
-	giteaClient, err := r.GiteaClientFunc(repo.Spec.GitURL, gitea.SetHTTPClient(client))
+	giteaHttpClient := &http.Client{Transport: tr}
+	giteaClient, err := r.GiteaClientFunc(repo.Spec.GitURL, gitea.SetHTTPClient(giteaHttpClient))
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get gitea client: %w", err)
 	}
@@ -176,6 +173,101 @@ func (r *RepositoryReconciler) reconcileGitRepo(ctx context.Context, repo *v1alp
 }
 
 func (r *RepositoryReconciler) reconcileRepoContent(ctx context.Context, repo *v1alpha1.GitRepository, giteaRepo *gitea.Repository) error {
+	switch repo.Spec.Source.Type {
+	case v1alpha1.SourceTypeLocal, v1alpha1.SourceTypeEmbedded:
+		return r.reconcileLocalRepoContent(ctx, repo, giteaRepo)
+	case v1alpha1.SourceTypeRemote:
+		return r.reconcileRemoteRepoContent(ctx, repo, giteaRepo)
+	default:
+		return nil
+	}
+}
+
+func (r *RepositoryReconciler) reconcileRemoteRepoContent(ctx context.Context, repo *v1alpha1.GitRepository, giteaRepo *gitea.Repository) error {
+	logger := log.FromContext(ctx)
+
+	remoteWT, _, err := util.CloneRemoteRepoToMemory(ctx, repo.Spec.Source.RemoteRepository, 1)
+	if err != nil {
+		return fmt.Errorf("cloning repo, %s: %w", repo.Spec.Source.RemoteRepository.Url, err)
+	}
+
+	localRepoSpec := v1alpha1.RemoteRepositorySpec{
+		CloneSubmodules: false,
+		Path:            ".",
+		Url:             giteaRepo.CloneURL,
+		Ref:             "",
+	}
+
+	var localRepo *git.Repository
+
+	localWT, lr, err := util.CloneRemoteRepoToMemory(ctx, localRepoSpec, 1)
+	if err != nil {
+		logger.V(1).Info("failed cloning repo. trying fallback url", "err", err, "url", giteaRepo.CloneURL)
+		localRepoSpec.Url = getFallbackRepositoryURL(repo, giteaRepo)
+		_, lr, err = util.CloneRemoteRepoToMemory(ctx, localRepoSpec, 1)
+		if err != nil {
+			return fmt.Errorf("cloning repo, %s: %w", giteaRepo.CloneURL, err)
+		}
+	}
+
+	localRepo = lr
+	tree, err := localRepo.Worktree()
+	if err != nil {
+		return fmt.Errorf("getting git worktree: %w", err)
+	}
+
+	err = util.CopyTreeToTree(remoteWT, localWT, fmt.Sprintf("/%s", repo.Spec.Source.Path), ".")
+	if err != nil {
+		return fmt.Errorf("copying contents, %s: %w", giteaRepo.CloneURL, err)
+	}
+
+	err = tree.AddGlob("*")
+	if err != nil {
+		return fmt.Errorf("adding git files: %w", err)
+	}
+
+	status, err := tree.Status()
+	if err != nil {
+		return fmt.Errorf("getting git status: %w", err)
+	}
+
+	if status.IsClean() {
+		h, _ := localRepo.Head()
+		repo.Status.LatestCommit.Hash = h.Hash().String()
+		return nil
+	}
+
+	commit, err := tree.Commit(fmt.Sprintf("updated from %s", repo.Spec.Source.Path), &git.CommitOptions{
+		All:               true,
+		AllowEmptyCommits: false,
+		Author: &object.Signature{
+			Name:  gitCommitAuthorName,
+			Email: gitCommitAuthorEmail,
+			When:  time.Now(),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("committing git files: %w", err)
+	}
+
+	auth, err := r.getBasicAuth(ctx, repo)
+	if err != nil {
+		return fmt.Errorf("getting basic auth: %w", err)
+	}
+	err = localRepo.PushContext(ctx, &git.PushOptions{
+		Auth:            &auth,
+		InsecureSkipTLS: true,
+	})
+	if err != nil {
+		return fmt.Errorf("pushing to git: %w", err)
+	}
+
+	repo.Status.LatestCommit.Hash = commit.String()
+
+	return nil
+}
+
+func (r *RepositoryReconciler) reconcileLocalRepoContent(ctx context.Context, repo *v1alpha1.GitRepository, giteaRepo *gitea.Repository) error {
 	logger := log.FromContext(ctx)
 
 	tempDir, err := os.MkdirTemp("", fmt.Sprintf("%s-%s", repo.Name, repo.Namespace))
@@ -194,7 +286,7 @@ func (r *RepositoryReconciler) reconcileRepoContent(ctx context.Context, repo *v
 		// if we cannot clone with gitea's configured url, then we fallback to using the url provided in spec.
 		logger.V(1).Info("failed cloning with returned clone URL. Falling back to default url.", "err", err)
 
-		cloneOptions.URL = fmt.Sprintf("%s/%s.git", repo.Spec.GitURL, giteaRepo.FullName)
+		cloneOptions.URL = getFallbackRepositoryURL(repo, giteaRepo)
 		c, retErr := git.PlainCloneContext(ctx, tempDir, false, cloneOptions)
 		if retErr != nil {
 			return fmt.Errorf("cloning repo with fall back url: %w", retErr)
@@ -245,7 +337,7 @@ func (r *RepositoryReconciler) reconcileRepoContent(ctx context.Context, repo *v
 	if err != nil {
 		return fmt.Errorf("getting basic auth: %w", err)
 	}
-	err = clonedRepo.Push(&git.PushOptions{
+	err = clonedRepo.PushContext(ctx, &git.PushOptions{
 		Auth:            &auth,
 		InsecureSkipTLS: true,
 	})
@@ -286,13 +378,6 @@ func (r *RepositoryReconciler) SetupWithManager(mgr ctrl.Manager, notifyChan cha
 		Complete(r)
 }
 
-func (r *RepositoryReconciler) shouldProcess(repo v1alpha1.GitRepository) bool {
-	if repo.Spec.Source.Type == "local" && !filepath.IsAbs(repo.Spec.Source.Path) {
-		return false
-	}
-	return true
-}
-
 func (r *RepositoryReconciler) writeRepoContents(repo *v1alpha1.GitRepository, dstPath string) error {
 	if repo.Spec.Source.EmbeddedAppName != "" {
 		resources, err := localbuild.GetEmbeddedRawInstallResources(
@@ -321,6 +406,10 @@ func (r *RepositoryReconciler) writeRepoContents(repo *v1alpha1.GitRepository, d
 
 func getRepositoryURL(namespace, name, baseUrl string) string {
 	return fmt.Sprintf("%s/giteaAdmin/%s-%s.git", baseUrl, namespace, name)
+}
+
+func getFallbackRepositoryURL(repo *v1alpha1.GitRepository, giteaRepo *gitea.Repository) string {
+	return fmt.Sprintf("%s/%s.git", repo.Spec.GitURL, giteaRepo.FullName)
 }
 
 func configureGitClient() {

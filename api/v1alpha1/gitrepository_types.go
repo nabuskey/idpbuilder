@@ -4,6 +4,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	SourceTypeLocal    = "local"
+	SourceTypeRemote   = "remote"
+	SourceTypeEmbedded = "embedded"
+)
+
 type GitRepositorySpec struct {
 	// +kubebuilder:validation:Optional
 	Customization PackageCustomization `json:"customization,omitempty"`
@@ -26,9 +32,10 @@ type GitRepositorySource struct {
 	// Path is the absolute path to directory that contains Kustomize structure or raw manifests.
 	// This is required when Type is set to local.
 	// +kubebuilder:validation:Optional
-	Path string `json:"path"`
+	Path             string               `json:"path"`
+	RemoteRepository RemoteRepositorySpec `json:"remoteRepository"`
 	// Type is the source type.
-	// +kubebuilder:validation:Enum:=local;embedded
+	// +kubebuilder:validation:Enum:=local;embedded;remote
 	// +kubebuilder:default:=embedded
 	Type string `json:"type"`
 }
