@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 )
 
@@ -94,7 +95,10 @@ func CreateIfNotExists(dir string, perm os.FileMode) error {
 }
 
 func ApplyTemplate(in []byte, templateData any) ([]byte, error) {
-	t, err := template.New("template").Parse(string(in))
+	funcMap := template.FuncMap{
+		"indent": templateIndent,
+	}
+	t, err := template.New("template").Funcs(funcMap).Parse(string(in))
 	if err != nil {
 		return nil, err
 	}
@@ -107,4 +111,11 @@ func ApplyTemplate(in []byte, templateData any) ([]byte, error) {
 	}
 
 	return ret.Bytes(), nil
+}
+
+func templateIndent(n int, val string) string {
+	spaces := strings.Repeat(" ", n)
+	sb := strings.Builder{}
+	sb.WriteString(strings.Replace(val, "\n", "\n"+spaces, -1))
+	return sb.String()
 }

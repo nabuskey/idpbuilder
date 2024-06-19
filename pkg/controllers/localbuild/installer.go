@@ -13,6 +13,7 @@ import (
 	"github.com/cnoe-io/idpbuilder/pkg/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -62,13 +63,8 @@ func (e *EmbeddedInstallation) Install(ctx context.Context, resource *v1alpha1.L
 		return ctrl.Result{}, err
 	}
 
-	// Ensure namespace exists
-	newNS := e.newNamespace(e.namespace)
-	if err = cli.Get(ctx, types.NamespacedName{Name: e.namespace}, newNS); err != nil {
-		// We got an error so try creating the NS
-		if err = cli.Create(ctx, newNS); err != nil {
-			return ctrl.Result{}, err
-		}
+	if err = ensureNamespace(ctx, nsClient, e.namespace); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	for i := range e.unmanagedResources {
@@ -161,4 +157,22 @@ func (e *EmbeddedInstallation) Install(ctx context.Context, resource *v1alpha1.L
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func ensureNamespace(ctx context.Context, kubeClient client.Client, name string) error {
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+	}
+
+	err := kubeClient.Get(ctx, client.ObjectKeyFromObject(ns), ns)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return kubeClient.Create(ctx, ns)
+		} else {
+			return fmt.Errorf("getting namespace %s: %w", name, err)
+		}
+	}
+	return nil
 }

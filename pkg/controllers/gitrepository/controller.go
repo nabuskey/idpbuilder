@@ -142,6 +142,14 @@ func (r *RepositoryReconciler) reconcileGitRepo(ctx context.Context, repo *v1alp
 	logger.V(1).Info("reconciling", "name", repo.Name, "dir", repo.Spec.Source)
 	repo.Status.Synced = false
 
+	if r.Config.SelfSignedCert == "" {
+		cert, _, err := util.GetIngressCertificateAndKey(ctx, r.Client, util.SelfSignedCertSecretName, "ingress-nginx")
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		r.Config.SelfSignedCert = string(cert)
+	}
+
 	provider, err := r.GitProviderFunc(ctx, repo, r.Client, r.Scheme, r.Config)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("initializing git provider: %w", err)
