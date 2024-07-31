@@ -98,7 +98,7 @@ func RunCommand(ctx context.Context, command string, timeout time.Duration) ([]b
 }
 
 func SendAndParse(ctx context.Context, target any, httpClient *http.Client, req *http.Request) error {
-	sendCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	sendCtx, cancel := context.WithTimeout(ctx, 150*time.Second)
 	defer cancel()
 	var bodyBytes []byte
 	if req.Body != nil {
