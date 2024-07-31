@@ -1,13 +1,13 @@
 name: E2E
 
-on:
-  push:
-    branches:
-      - 'main'
-    paths:
-      - '**.go'
-      - 'go.sum'
-      - 'go.mod'
+on: workflow_dispatch
+#  push:
+#    branches:
+#      - 'main'
+#    paths:
+#      - '**.go'
+#      - 'go.sum'
+#      - 'go.mod'
 jobs:
   e2e:
     runs-on: ubuntu-22.04
