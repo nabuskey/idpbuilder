@@ -59,7 +59,7 @@ func testCreate(t *testing.T) {
 	t.Log("running idpbuilder create")
 	cmd := exec.CommandContext(ctx, e2e.IdpbuilderBinaryLocation, "create")
 	b, err := cmd.CombinedOutput()
-	assert.Nil(t, err, fmt.Sprintf("error while running create: %s, %s", err, b))
+	assert.NoError(t, err, b)
 
 	kubeClient, err := e2e.GetKubeClient()
 	assert.Nil(t, err, fmt.Sprintf("error while getting client: %s", err))

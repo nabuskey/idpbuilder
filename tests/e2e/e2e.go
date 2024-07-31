@@ -97,24 +97,52 @@ func RunCommand(ctx context.Context, command string, timeout time.Duration) ([]b
 	return b, nil
 }
 
-func SendAndParse(target any, httpClient *http.Client, req *http.Request) error {
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("running http request: %w", err)
+func SendAndParse(ctx context.Context, target any, httpClient *http.Client, req *http.Request) error {
+	sendCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	var bodyBytes []byte
+	if req.Body != nil {
+		b, bErr := io.ReadAll(req.Body)
+		if bErr != nil {
+			return fmt.Errorf("failed copying http request body: %w", bErr)
+		}
+		bodyBytes = b
 	}
 
-	defer resp.Body.Close()
+	for {
+		select {
+		case <-sendCtx.Done():
+			return fmt.Errorf("timedout")
+		default:
+			if req.Body != nil {
+				b := append(make([]byte, 0, len(bodyBytes)), bodyBytes...)
+				req.Body = io.NopCloser(bytes.NewBuffer(b))
+			}
+			resp, err := httpClient.Do(req)
+			if err != nil {
+				fmt.Println("failed running http request: ", err)
+				time.Sleep(3 * time.Second)
+				continue
+			}
 
-	respB, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("reading http response body: %w", err)
-	}
+			defer resp.Body.Close()
 
-	err = json.Unmarshal(respB, target)
-	if err != nil {
-		return fmt.Errorf("parsing response body %s, %s", err, respB)
+			respB, err := io.ReadAll(resp.Body)
+			if err != nil {
+				fmt.Println("failed reading http response body: ", err)
+				time.Sleep(3 * time.Second)
+				continue
+			}
+
+			err = json.Unmarshal(respB, target)
+			if err != nil {
+				fmt.Println("failed parsing response body: ", err, "\n", string(respB))
+				time.Sleep(3 * time.Second)
+				continue
+			}
+			return nil
+		}
 	}
-	return nil
 }
 
 func TestGiteaEndpoints(ctx context.Context, t *testing.T, baseUrl string) {
@@ -159,7 +187,7 @@ func GetGiteaRepos(ctx context.Context, baseUrl string) ([]gitea.Repository, err
 	req.Header.Set("Authorization", fmt.Sprintf("token %s", token))
 
 	user := gitea.User{}
-	err = SendAndParse(&user, httpClient, req)
+	err = SendAndParse(ctx, &user, httpClient, req)
 	if err != nil {
 		return nil, fmt.Errorf("getting user info %w", err)
 	}
@@ -167,7 +195,7 @@ func GetGiteaRepos(ctx context.Context, baseUrl string) ([]gitea.Repository, err
 	repos := GiteaSearchRepoResponse{}
 	repoEp := fmt.Sprintf("%s%s", baseUrl, GiteaRepoEndpoint)
 	repoReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, repoEp, nil)
-	err = SendAndParse(&repos, httpClient, repoReq)
+	err = SendAndParse(ctx, &repos, httpClient, repoReq)
 	if err != nil {
 		return nil, fmt.Errorf("getting gitea repositories %w", err)
 	}
@@ -189,7 +217,7 @@ func GetGiteaSessionToken(ctx context.Context, auth BasicAuth, baseUrl string) (
 	sessionReq.Header.Set("Content-Type", "application/json")
 
 	var sess gitea.AccessToken
-	err = SendAndParse(&sess, httpClient, sessionReq)
+	err = SendAndParse(ctx, &sess, httpClient, sessionReq)
 	if err != nil {
 		return "", err
 	}
@@ -214,7 +242,7 @@ func TestArgoCDEndpoints(ctx context.Context, t *testing.T, baseUrl string) {
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
 	var appResp ArgoCDAppResp
-	err = SendAndParse(&appResp, httpClient, req)
+	err = SendAndParse(ctx, &appResp, httpClient, req)
 	assert.Nil(t, err, fmt.Sprintf("getting argocd applications: %s", err))
 
 	assert.Equal(t, 3, len(appResp.Items), fmt.Sprintf("number of apps do not match: %v", appResp.Items))
@@ -267,7 +295,7 @@ func GetArgoCDSessionToken(ctx context.Context, endpoint string) (string, error)
 	req.Header.Set("Content-Type", "application/json")
 
 	var tokenResp ArgoCDAuthResponse
-	err = SendAndParse(&tokenResp, httpClient, req)
+	err = SendAndParse(ctx, &tokenResp, httpClient, req)
 	if err != nil {
 		return "", err
 	}
