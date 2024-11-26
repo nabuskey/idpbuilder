@@ -1,4 +1,4 @@
-name: slash-command
+name: slash-commands
 
 on:
   issue_comment:
