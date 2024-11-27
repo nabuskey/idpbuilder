@@ -108,7 +108,7 @@ func SendAndParse(ctx context.Context, target any, httpClient *http.Client, req 
 	if req.Body != nil {
 		b, bErr := io.ReadAll(req.Body)
 		if bErr != nil {
-			return fmt.Errorf("failed copying http request boody: %w", bErr)
+			return fmt.Errorf("failed copying http request body: %w", bErr)
 		}
 		bodyBytes = b
 	}
