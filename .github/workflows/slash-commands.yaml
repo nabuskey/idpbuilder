@@ -24,5 +24,4 @@ jobs:
             maintain
             admin
             write
-            
           issue-type: pull-request
