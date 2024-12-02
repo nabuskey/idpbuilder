@@ -20,5 +20,9 @@ jobs:
           token: ${{ steps.generate-token.outputs.token }}
           commands: |
             e2e
-          permission: write
+          permission: |
+            maintain
+            admin
+            write
+            
           issue-type: pull-request
